@@ -1,9 +1,10 @@
 # ha-demo
 
-Minimal .NET 8 app that demonstrates two OpenShift 4 HA primitives:
+Minimal .NET 8 app that demonstrates three OpenShift 4 HA primitives:
 
 1. **Rolling updates with zero downtime** — `maxUnavailable: 0` keeps capacity at 100% throughout a rollout.
 2. **Readiness probe gating** — pods receive no traffic until `/readyz` passes, simulating JIT/cache warmup.
+3. **Liveness probe restart** — `/health/off` simulates a hung process; OpenShift kills and restarts the container.
 
 ---
 
@@ -90,6 +91,38 @@ Traffic balances back as soon as `/readyz` passes again.
 
 ---
 
+## Demo 3 — Liveness probe restart
+
+**Goal:** show that a hung pod gets killed and restarted automatically — distinct from readiness, which only removes it from the load balancer.
+
+With the loop running, break liveness on one pod:
+
+```bash
+curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/health/off
+```
+
+In another terminal, watch pod state:
+
+```bash
+oc get pods -l app=ha-demo -w
+```
+
+**What to watch (timeline):**
+
+| Time | Event |
+|---|---|
+| 0 s | `/healthz` starts returning 503 on the targeted pod |
+| ~10 s | First liveness failure registered (initialDelay 5 s + first check) |
+| ~30 s | `failureThreshold 3 × period 10 s` — OpenShift kills the container |
+| ~32 s | Pod restarts; `STATUS` cycles `Running → Error → CrashLoopBackOff` then back to `Running` |
+| ~42 s | Warmup completes, readiness passes, pod rejoins the load balancer |
+
+The loop output will show traffic staying on the surviving pod throughout, then spreading back to both pods once the restarted one warms up.
+
+There is no need to call `/health/on` — the restart resets all state. It is there only if you want to cancel the demo before the 30 s kill window.
+
+---
+
 ## HA Settings → Why it matters
 
 | Setting | Value | Why it matters |
@@ -110,7 +143,9 @@ Traffic balances back as soon as `/readyz` passes again.
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/` | `{ pod, count, uptime, ready }` |
-| `GET` | `/healthz` | Liveness — always `200` once the process is up |
+| `GET` | `/healthz` | Liveness — `200` normally, `503` when manually toggled off |
 | `GET` | `/readyz` | Readiness — `503` during warmup or when manually toggled off, `200` otherwise |
-| `POST` | `/ready/off` | Manually mark pod not-ready |
+| `POST` | `/ready/off` | Manually mark pod not-ready (pulled from LB within 4 s) |
 | `POST` | `/ready/on` | Restore readiness |
+| `POST` | `/health/off` | Simulate hung process — pod killed after 30 s (3 × 10 s) |
+| `POST` | `/health/on` | Cancel liveness failure before the kill window |

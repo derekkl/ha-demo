@@ -123,6 +123,43 @@ There is no need to call `/health/on` — the restart resets all state. It is th
 
 ---
 
+## Demo 4 — OOM kill
+
+**Goal:** show what happens when a pod exceeds its memory limit — the kernel OOM killer fires, OpenShift records `OOMKilled`, and the container restarts automatically.
+
+With the loop running:
+
+```bash
+curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/oom
+```
+
+Watch pods and memory in separate terminals:
+
+```bash
+oc get pods -l app=ha-demo -w
+watch -n2 oc top pods -l app=ha-demo
+```
+
+**What to watch (timeline):**
+
+| Time | Event |
+|---|---|
+| 0 s | Background allocator starts; 64 MiB chunks committed per iteration |
+| ~4–8 s | RSS climbs past the 512 Mi cgroup limit |
+| ~8 s | Kernel OOM killer fires — container exits with reason `OOMKilled` |
+| ~10 s | Pod restarts; `oc describe pod <name>` shows `OOMKilled: true` and incremented restart count |
+| ~20 s | Warmup completes, readiness passes, pod rejoins load balancer |
+
+The loop stays on the surviving pod throughout, then rebalances once the restarted pod warms up — same observable behaviour as Demo 3 but the exit cause is different: `OOMKilled` vs `Error`.
+
+Check the exit reason after the fact:
+
+```bash
+oc describe pod -l app=ha-demo | grep -A5 "Last State"
+```
+
+---
+
 ## HA Settings → Why it matters
 
 | Setting | Value | Why it matters |
@@ -149,3 +186,4 @@ There is no need to call `/health/on` — the restart resets all state. It is th
 | `POST` | `/ready/on` | Restore readiness |
 | `POST` | `/health/off` | Simulate hung process — pod killed after 30 s (3 × 10 s) |
 | `POST` | `/health/on` | Cancel liveness failure before the kill window |
+| `POST` | `/oom` | Allocate memory until OOM kill — container restarts with `OOMKilled` exit reason |

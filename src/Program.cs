@@ -35,4 +35,22 @@ app.MapPost("/ready/on",   () => { Interlocked.Exchange(ref readyManualOff,  0);
 app.MapPost("/health/off", () => { Interlocked.Exchange(ref healthManualOff, 1); return Results.Ok("liveness disabled");  });
 app.MapPost("/health/on",  () => { Interlocked.Exchange(ref healthManualOff, 0); return Results.Ok("liveness enabled");   });
 
+app.MapPost("/oom", () =>
+{
+    // Allocates in a background thread so the response returns before the kill.
+    // Array.Fill touches every page — defeats virtual-memory lazy allocation so
+    // RSS actually climbs and the cgroup limit fires within a few seconds.
+    Task.Run(() =>
+    {
+        var sink = new List<byte[]>();
+        while (true)
+        {
+            var block = new byte[64 * 1024 * 1024]; // 64 MiB per step
+            Array.Fill(block, (byte)0xff);
+            sink.Add(block);
+        }
+    });
+    return Results.Ok("allocating memory — OOM kill imminent");
+});
+
 app.Run();

@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://0.0.0.0:8080");
 
@@ -37,32 +39,37 @@ app.MapPost("/health/on",  () => { Interlocked.Exchange(ref healthManualOff, 0);
 
 app.MapPost("/oom", () =>
 {
-    // 4 MiB chunks: small enough to slip under the managed OOM threshold and
-    // let RSS climb steadily until the cgroup limit fires. 64 MiB was too large —
-    // the .NET runtime threw managed OOM before the kernel ever got involved,
-    // the unobserved task exception was swallowed, and allocation silently stopped.
-    // Thread.Sleep(10) between steps lets the response return cleanly first.
+    // Marshal.AllocHGlobal allocates unmanaged (native) memory directly — the
+    // .NET GC has no visibility into these bytes and cannot throw managed OOM to
+    // stop the loop. This is necessary because the GC derives a heap limit from
+    // the cgroup memory limit and refuses new managed allocations before the
+    // kernel ever gets involved; unmanaged allocation bypasses that layer entirely.
+    // The unsafe page-touch loop forces the kernel to commit physical memory
+    // (without it, Linux lazy-allocates and RSS doesn't actually climb).
     Task.Run(() =>
     {
-        var sink = new List<byte[]>();
+        var ptrs = new List<IntPtr>();
         try
         {
             while (true)
             {
-                var block = new byte[4 * 1024 * 1024];
-                Array.Fill(block, (byte)0xff);
-                sink.Add(block);
+                var ptr = Marshal.AllocHGlobal(4 * 1024 * 1024);
+                unsafe
+                {
+                    var p = (byte*)ptr;
+                    for (int i = 0; i < 4 * 1024 * 1024; i += 4096)
+                        p[i] = 0xff;
+                }
+                ptrs.Add(ptr);
                 Thread.Sleep(10);
             }
         }
         catch (Exception ex)
         {
-            // If managed OOM still fires, this surfaces in `oc logs` so we know
-            // to escalate to Marshal.AllocHGlobal (native allocation).
             Console.Error.WriteLine($"Allocator died: {ex.GetType().Name}: {ex.Message}");
         }
     });
-    return Results.Ok("allocating memory — OOM kill imminent");
+    return Results.Ok("allocating native memory — OOM kill imminent");
 });
 
 app.Run();

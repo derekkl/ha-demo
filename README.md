@@ -127,6 +127,18 @@ There is no need to call `/health/on` — the restart resets all state. It is th
 
 **Goal:** show what happens when a pod exceeds its memory limit — the kernel OOM killer fires, OpenShift records `OOMKilled`, and the container restarts automatically.
 
+**Why unmanaged allocation?**
+The .NET GC derives a managed heap limit from the cgroup memory limit and refuses new managed allocations (`new byte[]`, etc.) before RSS ever reaches the cgroup ceiling. The endpoint uses `Marshal.AllocHGlobal` to allocate native memory directly, bypassing the GC entirely. This is a useful teaching point about the two-layer memory model in containerised .NET:
+
+```
+Layer 1 — .NET GC heap limit  (derived from cgroup, ~75% of limit by default)
+                ↓ throws managed OutOfMemoryException — process stays alive
+Layer 2 — kernel cgroup limit  (hard RSS ceiling)
+                ↓ kernel OOM killer fires — container exits OOMKilled
+```
+
+Using `Marshal.AllocHGlobal` skips Layer 1 and goes straight to Layer 2.
+
 With the loop running:
 
 ```bash
@@ -144,13 +156,13 @@ watch -n2 oc top pods -l app=ha-demo
 
 | Time | Event |
 |---|---|
-| 0 s | Background allocator starts; 64 MiB chunks committed per iteration |
-| ~4–8 s | RSS climbs past the 512 Mi cgroup limit |
-| ~8 s | Kernel OOM killer fires — container exits with reason `OOMKilled` |
-| ~10 s | Pod restarts; `oc describe pod <name>` shows `OOMKilled: true` and incremented restart count |
-| ~20 s | Warmup completes, readiness passes, pod rejoins load balancer |
+| 0 s | Background allocator starts; 4 MiB native chunks committed per iteration (~400 MiB/s) |
+| ~1–2 s | RSS climbs past the 512 Mi cgroup limit |
+| ~2 s | Kernel OOM killer fires — container exits with reason `OOMKilled` |
+| ~4 s | Pod restarts; `oc describe pod <name>` shows `OOMKilled: true` and incremented restart count |
+| ~14 s | Warmup completes, readiness passes, pod rejoins load balancer |
 
-The loop stays on the surviving pod throughout, then rebalances once the restarted pod warms up — same observable behaviour as Demo 3 but the exit cause is different: `OOMKilled` vs `Error`.
+The loop stays on the surviving pod throughout, then rebalances once the restarted one warms up — same observable behaviour as Demo 3 but the exit cause is `OOMKilled` rather than `Error`.
 
 Check the exit reason after the fact:
 

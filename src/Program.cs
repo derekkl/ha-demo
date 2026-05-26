@@ -37,7 +37,7 @@ app.MapPost("/ready/on",   () => { Interlocked.Exchange(ref readyManualOff,  0);
 app.MapPost("/health/off", () => { Interlocked.Exchange(ref healthManualOff, 1); return Results.Ok("liveness disabled");  });
 app.MapPost("/health/on",  () => { Interlocked.Exchange(ref healthManualOff, 0); return Results.Ok("liveness enabled");   });
 
-app.MapPost("/oom", () =>
+app.MapPost("/oom", (int ms = 10) =>
 {
     // Marshal.AllocHGlobal allocates unmanaged (native) memory directly — the
     // .NET GC has no visibility into these bytes and cannot throw managed OOM to
@@ -61,7 +61,7 @@ app.MapPost("/oom", () =>
                         p[i] = 0xff;
                 }
                 ptrs.Add(ptr);
-                Thread.Sleep(10);
+                Thread.Sleep(ms);
             }
         }
         catch (Exception ex)

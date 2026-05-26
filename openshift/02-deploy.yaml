@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ha-demo
+  labels:
+    app: ha-demo
+  annotations:
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"ha-demo:latest"},
+        "fieldPath":"spec.template.spec.containers[?(@.name==\"ha-demo\")].image"}]
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ha-demo
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: ha-demo
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: ha-demo
+          image: ha-demo:latest
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          env:
+            - name: WARMUP_SECONDS
+              value: "10"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 2
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ha-demo
+  labels:
+    app: ha-demo
+spec:
+  selector:
+    app: ha-demo
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ha-demo
+  labels:
+    app: ha-demo
+spec:
+  host: ha-demo.apps.uat-ocp4.uat.corp.cableone.net
+  to:
+    kind: Service
+    name: ha-demo
+    weight: 100
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

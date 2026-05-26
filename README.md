@@ -1,0 +1,116 @@
+# ha-demo
+
+Minimal .NET 8 app that demonstrates two OpenShift 4 HA primitives:
+
+1. **Rolling updates with zero downtime** — `maxUnavailable: 0` keeps capacity at 100% throughout a rollout.
+2. **Readiness probe gating** — pods receive no traffic until `/readyz` passes, simulating JIT/cache warmup.
+
+---
+
+## Deploy
+
+### 1. Create the project
+
+```bash
+oc new-project ha-demo
+```
+
+### 2. Apply build resources (ImageStream + BuildConfig)
+
+```bash
+oc apply -f openshift/01-build.yaml
+```
+
+### 3. Build the image from source
+
+```bash
+oc start-build ha-demo --follow
+```
+
+The S2I build pulls `dotnet:8.0-ubi8` from the `openshift` namespace, compiles `src/`, and pushes to the `ha-demo:latest` ImageStreamTag.
+
+### 4. Deploy
+
+```bash
+oc apply -f openshift/02-deploy.yaml
+```
+
+The `image.openshift.io/triggers` annotation on the Deployment automatically resolves the image from the ImageStream. Future builds trigger an automatic rollout.
+
+### Verify
+
+```bash
+oc get pods -l app=ha-demo -w
+oc get route ha-demo
+```
+
+---
+
+## Demo 1 — Zero-downtime rolling update
+
+**Goal:** show that `maxUnavailable: 0` keeps 100% capacity serving throughout a rollout.
+
+Terminal 1 — start the traffic loop:
+
+```bash
+./scripts/demo-loop.sh
+```
+
+Terminal 2 — trigger a rollout:
+
+```bash
+oc rollout restart deployment/ha-demo
+```
+
+**What to watch:** `READY` stays `true` on every line. Hit counts gradually shift from the old pod name to the new one. Zero 503s or errors.
+
+The rollout sequence is: bring up new pod → wait for readiness → only then terminate old pod. With `maxUnavailable: 0`, the old pod is never removed from the load balancer until its replacement is confirmed ready.
+
+---
+
+## Demo 2 — Readiness probe gating
+
+**Goal:** show the readiness probe pulling a pod from rotation without a process crash.
+
+With the loop running, manually flip one pod out of rotation:
+
+```bash
+curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/ready/off
+```
+
+**What to watch:** within 4 s (failureThreshold 2 × period 2 s) that pod disappears from the loop output — 100% of traffic shifts to the remaining pod.
+
+Restore:
+
+```bash
+curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/ready/on
+```
+
+Traffic balances back as soon as `/readyz` passes again.
+
+---
+
+## HA Settings → Why it matters
+
+| Setting | Value | Why it matters |
+|---|---|---|
+| `maxUnavailable` | `0` | Never terminates a pod until a replacement is ready — capacity stays at 100% during rollout |
+| `maxSurge` | `1` | Allows one extra pod so the rollout can actually make progress when `maxUnavailable: 0` blocks removals |
+| `terminationGracePeriodSeconds` | `30` | Gives in-flight requests time to complete before the container is killed |
+| `preStop` sleep | `5 s` | Inserts a delay between `SIGTERM` and app shutdown so the router finishes deregistering the pod before it stops accepting connections |
+| `readinessProbe` period / failure | `2 s / 2` | Detects a failed pod and pulls it from the load balancer within 4 s |
+| `livenessProbe` period / failure | `10 s / 3` | Restarts genuinely stuck pods after 30 s without false-positive restarts during brief GC pauses |
+| `WARMUP_SECONDS` | `10` (default) | Simulates JIT / cache warmup — pod receives zero traffic until it self-reports ready |
+| `/ready/off` · `/ready/on` | — | Ad-hoc readiness toggle for live demos without needing to crash the process |
+
+---
+
+## Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | `{ pod, count, uptime, ready }` |
+| `GET` | `/healthz` | Liveness — always `200` once the process is up |
+| `GET` | `/readyz` | Readiness — `503` during warmup or when manually toggled off, `200` otherwise |
+| `POST` | `/ready/off` | Manually mark pod not-ready |
+| `POST` | `/ready/on` | Restore readiness |

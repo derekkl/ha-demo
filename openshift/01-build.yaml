@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: image.openshift.io/v1
+    kind: ImageStream
+    metadata:
+      name: ha-demo
+      labels:
+        app: ha-demo
+    spec:
+      lookupPolicy:
+        local: false
+
+  - apiVersion: build.openshift.io/v1
+    kind: BuildConfig
+    metadata:
+      name: ha-demo
+      labels:
+        app: ha-demo
+    spec:
+      source:
+        type: Git
+        git:
+          uri: https://github.com/derekkl/ha-demo.git
+          ref: main
+        contextDir: src
+      strategy:
+        type: Source
+        sourceStrategy:
+          from:
+            kind: ImageStreamTag
+            namespace: openshift
+            name: "dotnet:8.0-ubi8"
+          env:
+            - name: DOTNET_STARTUP_PROJECT
+              value: ha-demo.csproj
+      output:
+        to:
+          kind: ImageStreamTag
+          name: "ha-demo:latest"
+      triggers:
+        - type: ConfigChange
+        - type: ImageChange
+          imageChange: {}

@@ -37,17 +37,29 @@ app.MapPost("/health/on",  () => { Interlocked.Exchange(ref healthManualOff, 0);
 
 app.MapPost("/oom", () =>
 {
-    // Allocates in a background thread so the response returns before the kill.
-    // Array.Fill touches every page — defeats virtual-memory lazy allocation so
-    // RSS actually climbs and the cgroup limit fires within a few seconds.
+    // 4 MiB chunks: small enough to slip under the managed OOM threshold and
+    // let RSS climb steadily until the cgroup limit fires. 64 MiB was too large —
+    // the .NET runtime threw managed OOM before the kernel ever got involved,
+    // the unobserved task exception was swallowed, and allocation silently stopped.
+    // Thread.Sleep(10) between steps lets the response return cleanly first.
     Task.Run(() =>
     {
         var sink = new List<byte[]>();
-        while (true)
+        try
         {
-            var block = new byte[64 * 1024 * 1024]; // 64 MiB per step
-            Array.Fill(block, (byte)0xff);
-            sink.Add(block);
+            while (true)
+            {
+                var block = new byte[4 * 1024 * 1024];
+                Array.Fill(block, (byte)0xff);
+                sink.Add(block);
+                Thread.Sleep(10);
+            }
+        }
+        catch (Exception ex)
+        {
+            // If managed OOM still fires, this surfaces in `oc logs` so we know
+            // to escalate to Marshal.AllocHGlobal (native allocation).
+            Console.Error.WriteLine($"Allocator died: {ex.GetType().Name}: {ex.Message}");
         }
     });
     return Results.Ok("allocating memory — OOM kill imminent");

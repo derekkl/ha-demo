@@ -1,6 +1,6 @@
 # ha-demo
 
-Minimal .NET 8 app that demonstrates three OpenShift 4 HA primitives:
+Minimal .NET 9 app that demonstrates three OpenShift 4 HA primitives:
 
 1. **Rolling updates with zero downtime** — `maxUnavailable: 0` keeps capacity at 100% throughout a rollout.
 2. **Readiness probe gating** — pods receive no traffic until `/readyz` passes, simulating JIT/cache warmup.
@@ -38,7 +38,7 @@ oc apply -f openshift/01-build.yaml
 oc start-build ha-demo --follow
 ```
 
-The S2I build pulls `dotnet:8.0-ubi8` from the `openshift` namespace, compiles `src/`, and pushes to the `ha-demo:latest` ImageStreamTag.
+The S2I build pulls `dotnet:9.0-ubi8` from the `openshift` namespace, compiles `src/`, and pushes to the `ha-demo:latest` ImageStreamTag.
 
 ### 4. Deploy
 

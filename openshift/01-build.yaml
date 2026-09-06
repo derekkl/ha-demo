@@ -31,7 +31,7 @@ items:
           from:
             kind: ImageStreamTag
             namespace: openshift
-            name: "dotnet:8.0-ubi8"
+            name: "dotnet:9.0-ubi8"
           env:
             - name: DOTNET_STARTUP_PROJECT
               value: ha-demo.csproj

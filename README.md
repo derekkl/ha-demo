@@ -91,13 +91,36 @@ curl -sk -X POST https://${ROUTE}/ready/off
 
 **What to watch:** within 4 s (failureThreshold 2 × period 2 s) that pod disappears from the loop output — 100% of traffic shifts to the remaining pod.
 
-Restore:
+**Note on which pod gets hit:** with 2 replicas both still in rotation, the Route/Service load-balances the toggle request itself, so you can't predict in advance which pod the `/ready/off` call lands on. Confirm afterward with:
 
 ```bash
-curl -sk -X POST https://${ROUTE}/ready/on
+oc get pods -l app=ha-demo
 ```
 
-Traffic balances back as soon as `/readyz` passes again.
+Whichever pod shows `0/1` is the one you toggled.
+
+**Restoring readiness — this is the part that trips people up.** Once a pod is marked not-ready, OpenShift removes it from the Service's Endpoints entirely. That means a `curl .../ready/on` sent through the Route can *only* ever reach the pod(s) still in rotation — never the one you just pulled out. Going through the Route to restore it will always return `200 OK`, but it's turning readiness back on for the wrong pod (or a no-op if only one pod remains).
+
+To reliably restore the specific pod, bypass the Service/Route and talk to it directly — either `oc rsh` into it and curl `localhost`, or port-forward from your machine:
+
+```bash
+# from your own terminal
+oc port-forward pod/<pod-name> 8080:8080
+# in a second terminal
+curl -s -X POST http://localhost:8080/ready/on
+
+# or, from inside the pod itself
+oc rsh <pod-name>
+curl -s -X POST http://localhost:8080/ready/on
+```
+
+Confirm it came back:
+
+```bash
+oc get pods -l app=ha-demo
+```
+
+The same Route-vs-direct-pod distinction applies to `/health/off` and `/oom` below if you want to guarantee which specific pod you're targeting rather than leaving it to the load balancer.
 
 ---
 

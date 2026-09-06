@@ -86,7 +86,7 @@ The rollout sequence is: bring up new pod → wait for readiness → only then t
 With the loop running, manually flip one pod out of rotation:
 
 ```bash
-curl -sk -X POST https://${ROUTE}/ready/off
+curl -sk -X POST https://$ROUTE/ready/off
 ```
 
 **What to watch:** within 4 s (failureThreshold 2 × period 2 s) that pod disappears from the loop output — 100% of traffic shifts to the remaining pod.
@@ -131,7 +131,7 @@ The same Route-vs-direct-pod distinction applies to `/health/off` and `/oom` bel
 With the loop running, break liveness on one pod:
 
 ```bash
-curl -sk -X POST https://${ROUTE}/health/off
+curl -sk -X POST https://$ROUTE/health/off
 ```
 
 In another terminal, watch pod state:
@@ -175,7 +175,7 @@ Using `Marshal.AllocHGlobal` skips Layer 1 and goes straight to Layer 2.
 With the loop running:
 
 ```bash
-curl -sk -X POST https://${ROUTE}/oom
+curl -sk -X POST https://$ROUTE/oom
 ```
 
 Watch pods and memory in separate terminals:

@@ -12,13 +12,19 @@ Minimal .NET 8 app that demonstrates three OpenShift 4 HA primitives:
 
 ### 1. Target your project
 
-On the Red Hat Developer Sandbox you already have a fixed namespace and cannot create new projects — just switch to it:
+If you're on a cluster where you can create your own project (most clusters), create one:
 
 ```bash
-oc project derek-lyons-dev
+oc new-project ha-demo
 ```
 
-(On a cluster where you can create projects, use `oc new-project ha-demo` instead.)
+If you're on a shared or quota-limited cluster with a pre-assigned namespace (e.g. the Red Hat Developer Sandbox), just switch to your existing one instead — you won't be able to create a new one:
+
+```bash
+oc project <your-namespace>
+```
+
+You can find your current/default namespace with `oc project` (no args), or `oc whoami --show-context`.
 
 ### 2. Apply build resources (ImageStream + BuildConfig)
 

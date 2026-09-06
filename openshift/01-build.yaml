@@ -21,8 +21,9 @@ items:
       source:
         type: Git
         git:
+          # If you forked this repo, update uri (and ref, if not deploying from main) to point to your fork.
           uri: https://github.com/derekkl/ha-demo.git
-          ref: derek-lyons-dev
+          ref: main
         contextDir: src
       strategy:
         type: Source

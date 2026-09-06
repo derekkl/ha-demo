@@ -81,7 +81,6 @@ metadata:
   labels:
     app: ha-demo
 spec:
-  host: ha-demo.apps.uat-ocp4.uat.corp.cableone.net
   to:
     kind: Service
     name: ha-demo

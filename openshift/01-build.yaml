@@ -22,7 +22,7 @@ items:
         type: Git
         git:
           uri: https://github.com/derekkl/ha-demo.git
-          ref: main
+          ref: derek-lyons-dev
         contextDir: src
       strategy:
         type: Source

@@ -10,11 +10,15 @@ Minimal .NET 8 app that demonstrates three OpenShift 4 HA primitives:
 
 ## Deploy
 
-### 1. Create the project
+### 1. Target your project
+
+On the Red Hat Developer Sandbox you already have a fixed namespace and cannot create new projects — just switch to it:
 
 ```bash
-oc new-project ha-demo
+oc project derek-lyons-dev
 ```
+
+(On a cluster where you can create projects, use `oc new-project ha-demo` instead.)
 
 ### 2. Apply build resources (ImageStream + BuildConfig)
 
@@ -43,6 +47,12 @@ The `image.openshift.io/triggers` annotation on the Deployment automatically res
 ```bash
 oc get pods -l app=ha-demo -w
 oc get route ha-demo
+```
+
+Grab the route host into a variable — the commands below reuse it so nothing is hardcoded to a specific cluster:
+
+```bash
+export ROUTE=$(oc get route ha-demo -o jsonpath='{.spec.host}')
 ```
 
 ---
@@ -76,7 +86,7 @@ The rollout sequence is: bring up new pod → wait for readiness → only then t
 With the loop running, manually flip one pod out of rotation:
 
 ```bash
-curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/ready/off
+curl -sk -X POST https://${ROUTE}/ready/off
 ```
 
 **What to watch:** within 4 s (failureThreshold 2 × period 2 s) that pod disappears from the loop output — 100% of traffic shifts to the remaining pod.
@@ -84,7 +94,7 @@ curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/ready/off
 Restore:
 
 ```bash
-curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/ready/on
+curl -sk -X POST https://${ROUTE}/ready/on
 ```
 
 Traffic balances back as soon as `/readyz` passes again.
@@ -98,7 +108,7 @@ Traffic balances back as soon as `/readyz` passes again.
 With the loop running, break liveness on one pod:
 
 ```bash
-curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/health/off
+curl -sk -X POST https://${ROUTE}/health/off
 ```
 
 In another terminal, watch pod state:
@@ -142,7 +152,7 @@ Using `Marshal.AllocHGlobal` skips Layer 1 and goes straight to Layer 2.
 With the loop running:
 
 ```bash
-curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/oom
+curl -sk -X POST https://${ROUTE}/oom
 ```
 
 Watch pods and memory in separate terminals:

@@ -1,0 +1,119 @@
+diff --git a/README.md b/README.md
+index 5312472..5f4ed5f 100644
+--- a/README.md
++++ b/README.md
+@@ -10,12 +10,16 @@ Minimal .NET 8 app that demonstrates three OpenShift 4 HA primitives:
+ 
+ ## Deploy
+ 
+-### 1. Create the project
++### 1. Target your project
++
++On the Red Hat Developer Sandbox you already have a fixed namespace and cannot create new projects — just switch to it:
+ 
+ ```bash
+-oc new-project ha-demo
++oc project derek-lyons-dev
+ ```
+ 
++(On a cluster where you can create projects, use `oc new-project ha-demo` instead.)
++
+ ### 2. Apply build resources (ImageStream + BuildConfig)
+ 
+ ```bash
+@@ -45,6 +49,12 @@ oc get pods -l app=ha-demo -w
+ oc get route ha-demo
+ ```
+ 
++Grab the route host into a variable — the commands below reuse it so nothing is hardcoded to a specific cluster:
++
++```bash
++export ROUTE=$(oc get route ha-demo -o jsonpath='{.spec.host}')
++```
++
+ ---
+ 
+ ## Demo 1 — Zero-downtime rolling update
+@@ -76,7 +86,7 @@ The rollout sequence is: bring up new pod → wait for readiness → only then t
+ With the loop running, manually flip one pod out of rotation:
+ 
+ ```bash
+-curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/ready/off
++curl -sk -X POST https://${ROUTE}/ready/off
+ ```
+ 
+ **What to watch:** within 4 s (failureThreshold 2 × period 2 s) that pod disappears from the loop output — 100% of traffic shifts to the remaining pod.
+@@ -84,7 +94,7 @@ curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/ready/off
+ Restore:
+ 
+ ```bash
+-curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/ready/on
++curl -sk -X POST https://${ROUTE}/ready/on
+ ```
+ 
+ Traffic balances back as soon as `/readyz` passes again.
+@@ -98,7 +108,7 @@ Traffic balances back as soon as `/readyz` passes again.
+ With the loop running, break liveness on one pod:
+ 
+ ```bash
+-curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/health/off
++curl -sk -X POST https://${ROUTE}/health/off
+ ```
+ 
+ In another terminal, watch pod state:
+@@ -142,7 +152,7 @@ Using `Marshal.AllocHGlobal` skips Layer 1 and goes straight to Layer 2.
+ With the loop running:
+ 
+ ```bash
+-curl -sk -X POST https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net/oom
++curl -sk -X POST https://${ROUTE}/oom
+ ```
+ 
+ Watch pods and memory in separate terminals:
+diff --git a/openshift/01-build.yaml b/openshift/01-build.yaml
+index 276bcd0..f520f5d 100644
+--- a/openshift/01-build.yaml
++++ b/openshift/01-build.yaml
+@@ -22,7 +22,7 @@ items:
+         type: Git
+         git:
+           uri: https://github.com/derekkl/ha-demo.git
+-          ref: main
++          ref: derek-lyons-dev
+         contextDir: src
+       strategy:
+         type: Source
+diff --git a/openshift/02-deploy.yaml b/openshift/02-deploy.yaml
+index 6b51da9..a044da0 100644
+--- a/openshift/02-deploy.yaml
++++ b/openshift/02-deploy.yaml
+@@ -81,7 +81,6 @@ metadata:
+   labels:
+     app: ha-demo
+ spec:
+-  host: ha-demo.apps.uat-ocp4.uat.corp.cableone.net
+   to:
+     kind: Service
+     name: ha-demo
+diff --git a/scripts/demo-loop.sh b/scripts/demo-loop.sh
+index 29425e1..d8bffab 100755
+--- a/scripts/demo-loop.sh
++++ b/scripts/demo-loop.sh
+@@ -1,7 +1,16 @@
+ #!/usr/bin/env bash
+ set -euo pipefail
+ 
+-URL="${1:-https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net}"
++if [ -n "${1:-}" ]; then
++    URL="$1"
++else
++    HOST=$(oc get route ha-demo -o jsonpath='{.spec.host}' 2>/dev/null) || {
++        echo "Could not auto-discover route 'ha-demo' via oc. Pass the URL explicitly:" >&2
++        echo "  $0 https://<route-host>" >&2
++        exit 1
++    }
++    URL="https://${HOST}"
++fi
+ INTERVAL="${INTERVAL:-0.2}"
+ 
+ declare -A pod_counts

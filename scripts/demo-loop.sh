@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-URL="${1:-https://ha-demo.apps.uat-ocp4.uat.corp.cableone.net}"
+if [ -n "${1:-}" ]; then
+    URL="$1"
+else
+    HOST=$(oc get route ha-demo -o jsonpath='{.spec.host}' 2>/dev/null) || {
+        echo "Could not auto-discover route 'ha-demo' via oc. Pass the URL explicitly:" >&2
+        echo "  $0 https://<route-host>" >&2
+        exit 1
+    }
+    URL="https://${HOST}"
+fi
 INTERVAL="${INTERVAL:-0.2}"
 
 declare -A pod_counts
